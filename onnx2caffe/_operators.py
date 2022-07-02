@@ -8,7 +8,7 @@ import numpy as np
 from ._graph import Node, Graph
 from MyCaffe import Function as myf
 
-def _compare(a, b, encoding="utf8"): #type: (Text, Text, Text) -> bool
+def _compare(a, b, encoding="utf8"): #type: (str, str, str) -> bool
     if isinstance(a, bytes):
         a = a.decode(encoding)
     if isinstance(b, bytes):
