@@ -13,6 +13,7 @@ import google.protobuf as caffe_protobuf
 import platform
 import argparse
 from tqdm import tqdm
+import google.protobuf.text_format
 
 cpu_supported_layers=[
     "Convolution", "Deconvolution", "Pooling", "InnerProduct", 
@@ -451,6 +452,8 @@ def load_data_from_image(data_layer, cfg, i, net, output_dir):
             image_to_bgr(img_filename, net.blobs[data_layer].data.shape[1:], output_dir)
         ''' 
         img = cv2.imdecode(np.fromfile(img_filename, dtype=np.uint8), -1)
+        # BGR to RGB
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         inputs = img
 
     transformer = caffe.io.Transformer({data_layer: net.blobs[data_layer].data.shape})
@@ -562,12 +565,16 @@ def parse_opt():
 
 def main():
     # prase option
-    opt = parse_opt()
-    cfg_filename = opt.cfg
-    weight_filename = opt.weight
-    model_filename = opt.model
-    output_dir = opt.output
-    cuda_flag = opt.device
+    # opt = parse_opt()
+    cfg_filename = ["test_images/bdd.cfg"]
+    model_name = "ghost_relu3"
+    weight_filename = f"weights/{model_name}.caffemodel"
+    model_filename = f"weights/{model_name}.prototxt"
+    output_dir = f"output/{model_name}"
+    cuda_flag = 0
+
+    if not os.path.exists(f'output/{model_name}'):
+        os.mkdir(f'output/{model_name}')
 
     # check device
     if(cuda_flag == '1'):

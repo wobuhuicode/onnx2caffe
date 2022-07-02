@@ -101,9 +101,10 @@ def getGraph(onnx_path):
     return graph
 
 if __name__ == "__main__":
-    onnx_path = sys.argv[1]
-    prototxt_path = sys.argv[2]
-    caffemodel_path = sys.argv[3]
+    onnx_path = "weights/fbnet-ccpd_removed.onnx"
+    model_name = "fbnet_ccpd"
+    prototxt_path = "weights/" + model_name + ".prototxt"
+    caffemodel_path = "weights/" + model_name + ".caffemodel"
     graph = getGraph(onnx_path)
     convertToCaffe(graph, prototxt_path, caffemodel_path)
 
