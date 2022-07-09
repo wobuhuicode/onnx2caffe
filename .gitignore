@@ -2,3 +2,5 @@
 weights/
 output/
 model/
+
+__pycache__/
