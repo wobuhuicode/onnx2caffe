@@ -56,6 +56,9 @@ def _convert_Add(net, node, graph, err):
 def _convert_Mul(net, node, graph, err):
     pass
 
+def _convert_Div(net, node, graph, err):
+    pass
+
 def _convert_Reshape(net, node, graph, err):
     pass
 
@@ -76,8 +79,8 @@ def _convert_gemm(net, node, graph, err):
     else:
         err.missing_initializer(node,
                                 "Weight tensor: {} not found in the graph initializer".format(weight_name, ))
-    if node.attrs["broadcast"] != 1 or node.attrs["transB"] != 1:
-        return err.unsupported_op_configuration(node, "Gemm is supported only for inner_product layer")
+    # if node.attrs["broadcast"] != 1 or node.attrs["transB"] != 1:
+    #     return err.unsupported_op_configuration(node, "Gemm is supported only for inner_product layer")
     b = None
     if len(node.inputs) > 2:
         b = node.input_tensors[node.inputs[2]]
@@ -140,6 +143,10 @@ _ONNX_NODE_REGISTRY = {
     "ConvTranspose": _convert_conv_transpose,
     "Sigmoid": _convert_sigmoid,
     "Flatten": _convert_Flatten,
+
+    "GlobalAveragePool": _convert_pool,
+    "Clip": _convert_relu,
+    "Div": _convert_Div,
 }
 
 

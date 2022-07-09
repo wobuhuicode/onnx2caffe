@@ -8,15 +8,15 @@ import onnx
 
 
 # 需要给定的参数
-model_name = 'model/ofa_se_bdd.onnx'
+model_name = 'model/yolov6n.onnx'
 class_num = 1
 
-node_remove_start = ['Transpose_293', 'Transpose_311', 'Transpose_329']
-node_remove_end = ['Conv_309', 'Conv_327']
-reshape_param_list = ['onnx::Reshape_1052', 'onnx::Reshape_1063',  'onnx::Reshape_1074']
-reshape_node = ['Reshape_292', 'Reshape_310', 'Reshape_328']
+node_remove_start = ['Transpose_108', 'Transpose_149', 'Transpose_190']
+node_remove_end = ['Conv_133', 'Conv_174']
+reshape_param_list = ['onnx::Reshape_443', 'onnx::Reshape_453',  'onnx::Reshape_463']
+reshape_node = ['Reshape_107', 'Reshape_148', 'Reshape_189']
 
-output_name = 'model/ofa_se_bdd_removed.onnx'
+output_name = 'model/yolov6n_removed.onnx'
 
 # model_name = 'new_weights/mbv3l5.onnx'
 # class_num = 1
@@ -100,9 +100,9 @@ for i in range(len(remove_list)):
 
 
 # 创建3个新的 reshape tensor
-new_reshape1 = onnx.helper.make_tensor(reshape_param_list[0], onnx.TensorProto.INT32, [4], [1, 3, len_object, 6400])
-new_reshape2 = onnx.helper.make_tensor(reshape_param_list[1], onnx.TensorProto.INT32, [4], [1, 3, len_object, 1600])
-new_reshape3 = onnx.helper.make_tensor(reshape_param_list[2], onnx.TensorProto.INT32, [4], [1, 3, len_object, 400])
+new_reshape1 = onnx.helper.make_tensor(reshape_param_list[0], onnx.TensorProto.INT32, [4], [1, 1, len_object, 6400])
+new_reshape2 = onnx.helper.make_tensor(reshape_param_list[1], onnx.TensorProto.INT32, [4], [1, 1, len_object, 1600])
+new_reshape3 = onnx.helper.make_tensor(reshape_param_list[2], onnx.TensorProto.INT32, [4], [1, 1, len_object, 400])
 graph.initializer.extend([new_reshape1, new_reshape2, new_reshape3])
 
 # 修改 reshape node

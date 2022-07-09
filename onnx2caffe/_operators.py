@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
+
+from sympy import true
 from caffe import params as P
 import math
 import numpy as np
@@ -123,8 +125,24 @@ def _convert_Add(node,graph,err):
 
     max_dim = 0
     for name in input_name_list:
-        if graph.channel_dims[name]>max_dim:
-            max_dim = graph.channel_dims[name]
+        if name in graph.channel_dims:    
+            if graph.channel_dims[name]>max_dim:
+                max_dim = graph.channel_dims[name]
+        else:
+            weight_name = input_name_list[1]
+            if weight_name in node.input_tensors:
+                W = node.input_tensors[weight_name]
+                shift_ = float(W)
+                layer = myf("Power", node_name, [input_name_list[0]], [output_name],
+                    in_place=False,
+                    power_param=dict(
+                        power=1.0,
+                        scale=1.0,
+                        shift=shift_
+                    )
+                )
+            graph.channel_dims[output_name] = graph.channel_dims[input_name_list[0]]
+            return layer
 
     if 'broadcast' in node.attrs:
         if node.attrs['broadcast'] == 1:
@@ -152,16 +170,17 @@ def _convert_Mul(node,graph,err):
     #     if graph.channel_dims[name]>max_dim:
     #         max_dim = graph.channel_dims[name]
 
-    if 'broadcast' in node.attrs:
-        if node.attrs['broadcast'] == 1:
-            input_node_number = len(input_name_list)
-            if input_node_number !=2:
-                return err.unsupported_op_configuration(node, "Broadcast Mul must has 2 input, not {}".format(input_node_number))
-            axis = node.attrs['axis']
-            flat_layer = myf("Flatten",node_name+'_flat',[input_name_list[1]],[output_name+'_flat'])
-            layer = myf("Scale", node_name, [input_name_list[0],output_name+'_flat'], [output_name], bias_term = False, axis = axis)
-            graph.channel_dims[output_name] = graph.channel_dims[input_name_list[0]]
-            return flat_layer,layer
+    print(graph.shape_dict[input_name_list[0]])
+    print(graph.shape_dict[input_name_list[1]])
+
+    if graph.shape_dict[input_name_list[0]] != graph.shape_dict[input_name_list[1]]:
+        input_node_number = len(input_name_list)
+        if input_node_number !=2:
+            return err.unsupported_op_configuration(node, "Broadcast Mul must has 2 input, not {}".format(input_node_number))
+        flat_layer = myf("Flatten",node_name+'_flat',[input_name_list[1]],[output_name+'_flat'], axis=0)
+        layer = myf("Scale", node_name, [input_name_list[0],output_name+'_flat'], [output_name], bias_term = False, axis = 1)
+        graph.channel_dims[output_name] = graph.channel_dims[input_name_list[0]]
+        return flat_layer,layer
 
     layer = myf("Eltwise",node_name,input_name_list,[output_name],operation=P.Eltwise.PROD)
     graph.channel_dims[output_name] = graph.channel_dims[input_name_list[0]]
@@ -210,6 +229,17 @@ def _convert_pool(node,graph,err):
     node_name = node.name
     input_name = str(node.inputs[0])
     output_name = str(node.outputs[0])
+
+    if node.op_type.endswith("GlobalAveragePool"):
+        layer = myf("Pooling", node_name, [input_name], [output_name], pooling_param = dict(
+            pool = P.Pooling.AVE,
+            global_pooling = 1.0,
+        ))
+
+        graph.channel_dims[output_name] = graph.channel_dims[input_name]
+        return layer
+
+
     if node.op_type.endswith("MaxPool"):
         pool_type = P.Pooling.MAX
     elif node.op_type.endswith("AveragePool"):
@@ -228,7 +258,9 @@ def _convert_pool(node,graph,err):
                                                                                     stride_w = strides[1],
                                                                                     pad_h = pads[0],
                                                                                     pad_w = pads[1]))
+
     graph.channel_dims[output_name] = graph.channel_dims[input_name]
+    
     return layer
 
 def _convert_dropout(node,graph,err):
@@ -252,8 +284,8 @@ def _convert_gemm(node,graph,err):
                                 "Weight tensor: {} not found in the graph initializer".format(weight_name, ))
         return
 
-    if node.attrs["broadcast"] != 1 or node.attrs["transB"] != 1:
-        return err.unsupported_op_configuration(node,"Gemm is supported only for inner_product layer")
+    # if node.attrs["broadcast"] != 1 or node.attrs["transB"] != 1:
+    #     return err.unsupported_op_configuration(node,"Gemm is supported only for inner_product layer")
 
     b = None
     bias_flag = False
@@ -354,6 +386,95 @@ def _convert_conv_transpose(node,graph,err):
 
 
 
+def _convert_relu6(node, graph, err):
+    relu6_input_name = str(node.inputs[0])
+    relu6_output_name = str(node.outputs[0])
+    old_name = str(node.name)
+    name = old_name + "_relu6"
+    layers = []
+
+    # 首先做 relu，node 1
+    relu_name = name + "_relu"
+
+    layer = myf("ReLU", relu_name, [relu6_input_name], [relu_name + "_out"], in_place=False)
+    graph.channel_dims[relu_name + "_out"] = graph.channel_dims[relu6_input_name]  # 输出节点的维度赋值
+    layers.append(layer)
+
+    # 其次做 threshold，node 2
+    thre_name = name + "_thre"
+    layer = myf("Threshold", thre_name, [relu_name + "_out"], [thre_name + "_out"],
+                in_place=False,
+                threshold_param=dict(threshold=6.0)  # 阈值，大于它输出 1，否则为 0
+                )
+    graph.channel_dims[thre_name + "_out"] = graph.channel_dims[relu_name + "_out"]
+    layers.append(layer)
+
+    # threshold 左输出做线性变化，与x相乘，node 3
+    thre_left_power_name = name + "_thre_left_power"
+    layer = myf("Power", thre_left_power_name, [thre_name + "_out"], [thre_left_power_name + "_out"],
+                in_place=False,
+                power_param=dict(
+                    power=1.0,
+                    scale=(-1.0),
+                    shift=1.0
+                )
+                )
+    graph.channel_dims[thre_left_power_name + "_out"] = graph.channel_dims[thre_name + "_out"]
+    layers.append(layer)
+
+    # relu 后 x 输出处理，node 4
+    x_thre_out_name = name + "_x_mul_thre_out"
+    layer = myf("Eltwise", x_thre_out_name, [relu_name + "_out", thre_left_power_name + "_out"],
+                [x_thre_out_name + "_out"], operation=P.Eltwise.PROD)
+    graph.channel_dims[x_thre_out_name + "_out"] = graph.channel_dims[relu_name + "_out"]
+    layers.append(layer)
+
+    # threshold 右输出做线性变化，node 5
+    thre_right_power_name = name + "_thre_right_power"
+    layer = myf("Power", thre_right_power_name, [thre_name + "_out"], [thre_right_power_name + "_out"],
+                in_place=False,
+                power_param=dict(
+                    power=1.0,
+                    scale=6.0,
+                    shift=0.0
+                )
+                )
+    graph.channel_dims[thre_right_power_name + "_out"] = graph.channel_dims[thre_name + "_out"]
+    layers.append(layer)
+
+    # 最后结果汇总，node 6
+    add_name = name + "_add"
+    layer = myf("Eltwise", add_name, [x_thre_out_name + "_out", thre_right_power_name + "_out"],
+                [relu6_output_name], operation=P.Eltwise.SUM)
+    graph.channel_dims[relu6_output_name] = graph.channel_dims[relu6_input_name]
+    layers.append(layer)
+
+    return tuple(layers)
+
+def _convert_Div(node, graph, err):
+    input_name = str(node.inputs[0])
+    output_name = str(node.outputs[0])
+    node_name = node.name
+    
+    #print("node.input_tensors = ", node.input_tensors[node.inputs[1]])
+    scale_ = 1.0
+    shift_ = 0.0
+    power_ = 1.0
+    
+    scale_ = (1 / node.input_tensors[node.inputs[1]])
+
+    layer = myf("Power", node_name, [input_name], [output_name],
+                in_place=False,
+                power_param=dict(
+                    power=power_,
+                    scale=scale_,
+                    shift=shift_
+                )
+                )
+    graph.channel_dims[output_name] = graph.channel_dims[input_name]
+    return layer
+
+
 _ONNX_NODE_REGISTRY = {
     "Conv": _convert_conv,
     "Relu": _convert_relu,
@@ -370,4 +491,8 @@ _ONNX_NODE_REGISTRY = {
     "ConvTranspose": _convert_conv_transpose,
     "Sigmoid": _convert_sigmoid,
     "Flatten": _convert_Flatten,
+
+    "GlobalAveragePool": _convert_pool,
+    "Clip": _convert_relu6,
+    "Div": _convert_Div,
 }
